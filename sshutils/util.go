@@ -71,6 +71,16 @@ func executeCmdStream(cmd, hostname string, config *ssh.ClientConfig) (err error
 	session, _ := conn.NewSession()
 	defer session.Close()
 
+	modes := ssh.TerminalModes{
+		ssh.ECHO:          0,
+		ssh.TTY_OP_ISPEED: 14400,
+		ssh.TTY_OP_OSPEED: 14400,
+	}
+	if err = session.RequestPty("xterm", 25, 100, modes); err != nil {
+		log.Println("unable to attach pty: ", err)
+		return err
+	}
+
 	out, err := session.StdoutPipe()
 	if err != nil {
 		log.Println("unable to attach stdout: ", err)
@@ -94,7 +104,7 @@ func executeCmdStream(cmd, hostname string, config *ssh.ClientConfig) (err error
 	for scanner.Scan() {
 		fmt.Println(hostname, "-->", scanner.Text())
 	}
-
+	os.Interrupt.Signal()
 	scanner = bufio.NewScanner(errPipe)
 	scanner.Split(bufio.ScanLines)
 	for scanner.Scan() {
