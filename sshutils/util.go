@@ -104,7 +104,7 @@ func executeCmdStream(cmd, hostname string, config *ssh.ClientConfig) (err error
 	for scanner.Scan() {
 		fmt.Println(hostname, "-->", scanner.Text())
 	}
-	os.Interrupt.Signal()
+
 	scanner = bufio.NewScanner(errPipe)
 	scanner.Split(bufio.ScanLines)
 	for scanner.Scan() {
