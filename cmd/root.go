@@ -29,10 +29,11 @@ var cfgFile string
 
 // rootCmd represents the base command when called without any subcommands
 var rootCmd = &cobra.Command{
-	Use:     "gossh",
-	Short:   "pssh alternative in go",
-	Example: `gossh --hosts=hosts.txt --cert=/Users/ajinkya.korde/.ssh/stage-cert.pub --cmd="syslog"`,
-	Run:     root,
+	Use:   "gossh",
+	Short: "pssh alternative in go",
+	Example: `gossh --hosts-file=hosts.txt --cert=/Users/ajinkya.korde/.ssh/stage-cert.pub --cmd="syslog"
+gossh --host=host1,host2 --cert=/Users/ajinkya.korde/.ssh/stage-cert.pub --cmd="syslog"`,
+	Run: root,
 }
 
 // Execute adds all child commands to the root command and sets flags appropriately.
@@ -48,7 +49,7 @@ func init() {
 	cobra.OnInitialize(initConfig)
 
 	rootCmd.Flags().String("hosts-file", "", "Hosts filepath")
-	rootCmd.Flags().String("host", "", "Host")
+	rootCmd.Flags().StringSlice("host", []string{}, "Hosts")
 	rootCmd.Flags().StringSlice("cert", []string{}, "Cert filepath")
 	rootCmd.Flags().String("cmd", "", "Command")
 }
@@ -61,8 +62,8 @@ func initConfig() {
 
 //do proper error checks
 func root(cmd *cobra.Command, args []string) {
-	host, err := cmd.Flags().GetString("host")
-	hosts, err := cmd.Flags().GetString("hosts-file")
+	hosts, err := cmd.Flags().GetStringSlice("host")
+	hostFile, err := cmd.Flags().GetString("hosts-file")
 	certs, err := cmd.Flags().GetStringSlice("cert")
 	execCmd, err := cmd.Flags().GetString("cmd")
 	if err != nil {
@@ -70,16 +71,16 @@ func root(cmd *cobra.Command, args []string) {
 		log.Fatal(err)
 	}
 	var hostList []string
-	if (hosts == "" && host == "") || (hosts != "" && host != "") {
+	if (hostFile == "" && len(hosts) == 0) || (hostFile != "" && len(hosts) != 0) {
 		fmt.Println("either host or hostfile is required")
 		cmd.Usage()
 		log.Fatal("either host or hostfile is required")
 	}
-	if host != "" {
-		hostList = []string{host}
+	if len(hosts) != 0 {
+		hostList = hosts
 	}
-	if hosts != "" {
-		hostList = sshutils.GetHosts(hosts)
+	if hostFile != "" {
+		hostList = sshutils.GetHosts(hostFile)
 	}
 	sshutils.RunCmd(certs, hostList, execCmd)
 }
