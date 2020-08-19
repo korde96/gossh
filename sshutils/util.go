@@ -137,10 +137,6 @@ type HostPipe struct {
 	errPipe  io.Reader
 }
 
-func (hostPipe *HostPipe) print() {
-
-}
-
 func handleHostPipe(pipeC <-chan HostPipe) <-chan string {
 	var readerWg sync.WaitGroup
 	results := make(chan string)
@@ -162,7 +158,7 @@ func handleHostPipe(pipeC <-chan HostPipe) <-chan string {
 		go func() {
 			defer readerWg.Done()
 			for errScanner.Scan() {
-				results <- strings.Join([]string{"[ERROR]", h, "-->", scanner.Text()}, "")
+				results <- strings.Join([]string{"[ERROR]", h, "-->", errScanner.Text()}, "")
 			}
 		}()
 	}
