@@ -19,13 +19,14 @@ package sshutils
 import (
 	"bufio"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"log"
 	"net"
 	"os"
 	"strings"
+	"sync"
 
-	"github.com/gammazero/workerpool"
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/agent"
 )
@@ -61,15 +62,13 @@ func getCertSigner(certPath string, knownSigner ssh.Signer) ssh.Signer {
 	return certSigner
 }
 
-func executeCmdStream(cmd, hostname string, config *ssh.ClientConfig) (err error) {
+func executeCmdStream(cmd, hostname string, config *ssh.ClientConfig) (outPipe, errPipe *io.Reader, err error) {
 	conn, err := ssh.Dial("tcp", hostname+":22", config)
 	if err != nil {
 		log.Println("unable to dial", hostname, ": ", err)
-		return err
+		return nil, nil, err
 	}
-	defer conn.Close()
 	session, _ := conn.NewSession()
-	defer session.Close()
 
 	modes := ssh.TerminalModes{
 		ssh.ECHO:          0,
@@ -78,38 +77,34 @@ func executeCmdStream(cmd, hostname string, config *ssh.ClientConfig) (err error
 	}
 	if err = session.RequestPty("xterm", 25, 100, modes); err != nil {
 		log.Println("unable to attach pty: ", err)
-		return err
+		return nil, nil, err
 	}
 
-	out, err := session.StdoutPipe()
+	outP, err := session.StdoutPipe()
 	if err != nil {
 		log.Println("unable to attach stdout: ", err)
-		return err
+		return nil, nil, err
 	}
+	outPipe = &outP
 
-	errPipe, err := session.StderrPipe()
+	errP, err := session.StderrPipe()
 	if err != nil {
 		log.Println("unable to attach stderr: ", err)
-		return err
+		return nil, nil, err
 	}
+	errPipe = &errP
 
-	bashCmd := strings.Join([]string{"bash -c '", cmd, "'"}, "")
-	if err := session.Start(bashCmd); err != nil {
-		log.Println("unable to run command: ", err)
-		return err
-	}
-	log.Print("Running command")
-	scanner := bufio.NewScanner(out)
-	scanner.Split(bufio.ScanLines)
-	for scanner.Scan() {
-		fmt.Println(hostname, "-->", scanner.Text())
-	}
-
-	scanner = bufio.NewScanner(errPipe)
-	scanner.Split(bufio.ScanLines)
-	for scanner.Scan() {
-		fmt.Println("[ERROR]", hostname, "-->", scanner.Text())
-	}
+	go func() (err error) {
+		log.Print("Running command")
+		bashCmd := strings.Join([]string{"bash -c '", cmd, "'"}, "")
+		if err := session.Start(bashCmd); err != nil {
+			log.Println("unable to run command: ", err)
+			return err
+		}
+		session.Wait()
+		session.Close()
+		return
+	}()
 	return
 }
 
@@ -138,17 +133,80 @@ func GetClientConfig(certPaths []string) *ssh.ClientConfig {
 	return config
 }
 
-func RunCmd(certPaths, hosts []string, execCmd string) {
-	config := GetClientConfig(certPaths)
-	wp := workerpool.New(5)
+type HostPipe struct {
+	hostname string
+	outPipe  *io.Reader
+	errPipe  *io.Reader
+}
+
+func handleHostPipe(pipeC <-chan HostPipe) <-chan string {
+	var readerWg sync.WaitGroup
+	results := make(chan string)
+	for c := range pipeC {
+
+		readerWg.Add(2)
+		h := c.hostname
+		scanner := bufio.NewScanner(*c.outPipe)
+		scanner.Split(bufio.ScanLines)
+		go func() {
+			defer readerWg.Done()
+			for scanner.Scan() {
+				results <- strings.Join([]string{h, "-->", scanner.Text()}, "")
+			}
+		}()
+
+		errScanner := bufio.NewScanner(*c.errPipe)
+		errScanner.Split(bufio.ScanLines)
+		go func() {
+			defer readerWg.Done()
+			for errScanner.Scan() {
+				results <- strings.Join([]string{"[ERROR]", h, "-->", scanner.Text()}, "")
+			}
+		}()
+	}
+
+	go func() {
+		readerWg.Wait()
+		close(results)
+	}()
+
+	return results
+
+}
+
+func genOutPipes(config *ssh.ClientConfig, hosts []string, execCmd string) <-chan HostPipe {
+	pipeC := make(chan HostPipe)
+	var cmdExecWg sync.WaitGroup
+
 	for _, hostname := range hosts {
 		h := hostname
 		log.Print("submitting for host: ", h)
-		wp.Submit(func() {
-			if err := executeCmdStream(execCmd, h, config); err != nil {
+		cmdExecWg.Add(1)
+		go func() {
+			defer cmdExecWg.Done()
+			outPipe, errPipe, err := executeCmdStream(execCmd, h, config)
+			if err != nil {
 				log.Print("failed to execute command for host: ", h)
+			} else {
+				pipeC <- HostPipe{h, outPipe, errPipe}
 			}
-		})
+		}()
 	}
-	wp.StopWait()
+	go func() {
+		cmdExecWg.Wait()
+		close(pipeC)
+	}()
+	return pipeC
+}
+
+func RunCmd(certPaths, hosts []string, execCmd string) {
+	config := GetClientConfig(certPaths)
+
+	pipeC := genOutPipes(config, hosts, execCmd)
+
+	results := handleHostPipe(pipeC)
+
+	for r := range results {
+		fmt.Println(r)
+	}
 }
