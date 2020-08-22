@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -52,6 +53,7 @@ func init() {
 	rootCmd.Flags().StringSlice("host", []string{}, "Hosts")
 	rootCmd.Flags().StringSlice("cert", []string{}, "Cert filepath")
 	rootCmd.Flags().String("cmd", "", "Command")
+	rootCmd.Flags().IntP("timeout", "t", 0, "Timeout; value > 0 is honored")
 }
 
 // initConfig reads in config file and ENV variables if set.
@@ -66,21 +68,32 @@ func root(cmd *cobra.Command, args []string) {
 	hostFile, err := cmd.Flags().GetString("hosts-file")
 	certs, err := cmd.Flags().GetStringSlice("cert")
 	execCmd, err := cmd.Flags().GetString("cmd")
+	timeout, err := cmd.Flags().GetInt("timeout")
 	if err != nil {
 		cmd.Usage()
 		log.Fatal(err)
 	}
 	var hostList []string
-	if (hostFile == "" && len(hosts) == 0) || (hostFile != "" && len(hosts) != 0) {
+	switch {
+	case hostFile != "" && len(hosts) != 0:
+		fallthrough
+	default:
 		fmt.Println("either host or hostfile is required")
 		cmd.Usage()
 		log.Fatal("either host or hostfile is required")
-	}
-	if len(hosts) != 0 {
+	case len(hosts) != 0:
 		hostList = hosts
-	}
-	if hostFile != "" {
+	case hostFile != "":
 		hostList = sshutils.GetHosts(hostFile)
+
 	}
+
+	if timeout > 0 {
+		time.AfterFunc(time.Duration(timeout)*time.Second, func() {
+			log.Fatal("Execution timed out!")
+		})
+	}
+
 	sshutils.RunCmd(certs, hostList, execCmd)
+
 }

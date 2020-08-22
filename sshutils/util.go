@@ -139,7 +139,7 @@ type HostPipe struct {
 
 func handleHostPipe(pipeC <-chan HostPipe) <-chan string {
 	var readerWg sync.WaitGroup
-	results := make(chan string)
+	results := make(chan string, 100)
 	for c := range pipeC {
 
 		readerWg.Add(2)
@@ -173,7 +173,7 @@ func handleHostPipe(pipeC <-chan HostPipe) <-chan string {
 }
 
 func genOutPipes(config ssh.ClientConfig, hosts []string, execCmd string) <-chan HostPipe {
-	pipeC := make(chan HostPipe)
+	pipeC := make(chan HostPipe, len(hosts))
 	var cmdExecWg sync.WaitGroup
 
 	for _, hostname := range hosts {
@@ -205,4 +205,5 @@ func RunCmd(certPaths, hosts []string, execCmd string) {
 	for r := range results {
 		fmt.Println(r)
 	}
+	log.Println("Execution completed")
 }
