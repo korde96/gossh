@@ -114,7 +114,7 @@ func GetHosts(hostsPath string) []string {
 	return strings.Split(string(f), "\n")
 }
 
-func GetClientConfig(certPaths []string) ssh.ClientConfig {
+func getClientConfig(certPaths []string) ssh.ClientConfig {
 	signers := getKnownSigners()
 	for _, certPath := range certPaths {
 		signer := getCertSigner(certPath, signers[0])
@@ -131,36 +131,42 @@ func GetClientConfig(certPaths []string) ssh.ClientConfig {
 	return config
 }
 
-type HostPipe struct {
+type hostpipe struct {
 	hostname string
 	outPipe  io.Reader
 	errPipe  io.Reader
 }
 
-func handleHostPipe(pipeC <-chan HostPipe) <-chan string {
+func (hp *hostpipe) getLines(results chan string) <-chan bool {
+
+	done := make(chan bool, 100)
+	h := hp.hostname
+	scanner := bufio.NewScanner(hp.outPipe)
+	scanner.Split(bufio.ScanLines)
+	errScanner := bufio.NewScanner(hp.errPipe)
+	errScanner.Split(bufio.ScanLines)
+	go func() {
+		for scanner.Scan() {
+			results <- strings.Join([]string{h, "-->", scanner.Text()}, "")
+		}
+		for errScanner.Scan() {
+			results <- strings.Join([]string{"[ERROR]", h, "-->", errScanner.Text()}, "")
+		}
+		done <- true
+	}()
+
+	return done
+}
+
+func handleHostPipe(pipeC <-chan hostpipe) <-chan string {
 	var readerWg sync.WaitGroup
 	results := make(chan string, 100)
 	for c := range pipeC {
-
-		readerWg.Add(2)
-		h := c.hostname
-		scanner := bufio.NewScanner(c.outPipe)
-		scanner.Split(bufio.ScanLines)
-		go func() {
-			defer readerWg.Done()
-			for scanner.Scan() {
-				results <- strings.Join([]string{h, "-->", scanner.Text()}, "")
-			}
-		}()
-
-		errScanner := bufio.NewScanner(c.errPipe)
-		errScanner.Split(bufio.ScanLines)
-		go func() {
-			defer readerWg.Done()
-			for errScanner.Scan() {
-				results <- strings.Join([]string{"[ERROR]", h, "-->", errScanner.Text()}, "")
-			}
-		}()
+		readerWg.Add(1)
+		go func(pipe hostpipe) {
+			<-pipe.getLines(results)
+			readerWg.Done()
+		}(c)
 	}
 
 	go func() {
@@ -172,8 +178,8 @@ func handleHostPipe(pipeC <-chan HostPipe) <-chan string {
 
 }
 
-func genOutPipes(config ssh.ClientConfig, hosts []string, execCmd string) <-chan HostPipe {
-	pipeC := make(chan HostPipe, len(hosts))
+func genOutPipes(config ssh.ClientConfig, hosts []string, execCmd string) <-chan hostpipe {
+	pipeC := make(chan hostpipe, len(hosts))
 	var cmdExecWg sync.WaitGroup
 
 	for _, hostname := range hosts {
@@ -184,7 +190,7 @@ func genOutPipes(config ssh.ClientConfig, hosts []string, execCmd string) <-chan
 			if err != nil {
 				log.Print("failed to execute command for host: " + h)
 			} else {
-				pipeC <- HostPipe{h, outPipe, errPipe}
+				pipeC <- hostpipe{h, outPipe, errPipe}
 			}
 		}(hostname)
 	}
@@ -196,7 +202,7 @@ func genOutPipes(config ssh.ClientConfig, hosts []string, execCmd string) <-chan
 }
 
 func RunCmd(certPaths, hosts []string, execCmd string) {
-	config := GetClientConfig(certPaths)
+	config := getClientConfig(certPaths)
 
 	pipeC := genOutPipes(config, hosts, execCmd)
 
