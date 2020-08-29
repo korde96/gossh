@@ -139,7 +139,7 @@ type hostpipe struct {
 
 func (hp *hostpipe) getLines(results chan string) <-chan bool {
 
-	done := make(chan bool, 100)
+	done := make(chan bool)
 	h := hp.hostname
 	scanner := bufio.NewScanner(hp.outPipe)
 	scanner.Split(bufio.ScanLines)
@@ -201,15 +201,17 @@ func genOutPipes(config ssh.ClientConfig, hosts []string, execCmd string) <-chan
 	return pipeC
 }
 
-func RunCmd(certPaths, hosts []string, execCmd string) {
+func RunCmd(certPaths, hosts []string, execCmd string, writer io.Writer) {
 	config := getClientConfig(certPaths)
 
 	pipeC := genOutPipes(config, hosts, execCmd)
 
 	results := handleHostPipe(pipeC)
 
+	// bufio.NewWriter(f)
 	for r := range results {
-		fmt.Println(r)
+		fmt.Fprintln(writer, r)
 	}
+
 	log.Println("Execution completed")
 }

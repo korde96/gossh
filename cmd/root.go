@@ -17,6 +17,7 @@ package cmd
 
 import (
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"time"
@@ -53,6 +54,7 @@ func init() {
 	rootCmd.Flags().StringSlice("host", []string{}, "Hosts")
 	rootCmd.Flags().StringSlice("cert", []string{}, "Cert filepath")
 	rootCmd.Flags().String("cmd", "", "Command")
+	rootCmd.Flags().StringP("output-file", "o", "", "Output file; will output to stdout by default")
 	rootCmd.Flags().IntP("timeout", "t", 0, "Timeout; value > 0 is honored")
 }
 
@@ -68,6 +70,7 @@ func root(cmd *cobra.Command, args []string) {
 	hostFile, err := cmd.Flags().GetString("hosts-file")
 	certs, err := cmd.Flags().GetStringSlice("cert")
 	execCmd, err := cmd.Flags().GetString("cmd")
+	outputFile, err := cmd.Flags().GetString("output-file")
 	timeout, err := cmd.Flags().GetInt("timeout")
 	if err != nil {
 		cmd.Usage()
@@ -93,7 +96,15 @@ func root(cmd *cobra.Command, args []string) {
 			log.Fatal("Execution timed out!")
 		})
 	}
-
-	sshutils.RunCmd(certs, hostList, execCmd)
-
+	var out io.WriteCloser
+	if outputFile != "" {
+		out, err = os.OpenFile("test.txt", os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0644)
+		if err != nil {
+			log.Fatal("unable to create output file")
+		}
+	} else {
+		out = os.Stdout
+	}
+	sshutils.RunCmd(certs, hostList, execCmd, out)
+	out.Close()
 }
