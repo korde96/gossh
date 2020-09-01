@@ -24,7 +24,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"gossh/sshutils"
+	"github.com/korde96/gossh/sshutils"
 )
 
 var cfgFile string

@@ -1,4 +1,4 @@
-module gossh
+module github.com/korde96/gossh
 
 go 1.14
 

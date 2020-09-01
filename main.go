@@ -15,7 +15,7 @@ limitations under the License.
 */
 package main
 
-import "gossh/cmd"
+import "github.com/korde96/gossh/cmd"
 
 func main() {
 	cmd.Execute()
