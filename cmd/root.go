@@ -87,8 +87,9 @@ func root(cmd *cobra.Command, args []string) {
 	case len(hosts) != 0:
 		hostList = hosts
 	case hostFile != "":
-		log.Fatal("unable to read hosts file: ", err)
-		if hostList, err = sshutils.GetHosts(hostFile); err != nil {
+		hostList, err = sshutils.GetHosts(hostFile)
+		if err != nil {
+			log.Fatal("unable to read hosts file: ", err)
 		}
 	}
 
