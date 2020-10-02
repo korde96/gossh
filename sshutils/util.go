@@ -106,12 +106,12 @@ func executeCmdStream(cmd, hostname string, config ssh.ClientConfig) (outPipe, e
 	return
 }
 
-func GetHosts(hostsPath string) []string {
+func GetHosts(hostsPath string) ([]string, error) {
 	f, err := ioutil.ReadFile(hostsPath)
 	if err != nil {
-		log.Fatal("unable to read hosts file: ", err)
+		return nil, err
 	}
-	return strings.Split(string(f), "\n")
+	return strings.Split(string(f), "\n"), nil
 }
 
 func getClientConfig(certPaths []string) ssh.ClientConfig {

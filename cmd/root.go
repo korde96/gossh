@@ -87,8 +87,10 @@ func root(cmd *cobra.Command, args []string) {
 	case len(hosts) != 0:
 		hostList = hosts
 	case hostFile != "":
-		hostList = sshutils.GetHosts(hostFile)
-
+		hostList, err = sshutils.GetHosts(hostFile)
+		if err != nil {
+			log.Fatal("unable to read hosts file: ", err)
+		}
 	}
 
 	if timeout > 0 {
@@ -98,7 +100,7 @@ func root(cmd *cobra.Command, args []string) {
 	}
 	var out io.WriteCloser
 	if outputFile != "" {
-		out, err = os.OpenFile("test.txt", os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0644)
+		out, err = os.OpenFile(outputFile, os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0644)
 		if err != nil {
 			log.Fatal("unable to create output file")
 		}
